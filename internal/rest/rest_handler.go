@@ -65,6 +65,37 @@ func parseQueryParams(r *http.Request, defaultLimit, maxLimit int) (int, int) {
 	return limit, offset
 }
 
+// CreateConversation creates (or gets) a 1-to-1 conversation between the
+// requester and a target participant.
+func (h *RESTHandler) CreateConversation(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	// Get X-User-ID header
+	userID, ok := getUserID(w, r)
+	if !ok {
+		return
+	}
+
+	var body struct {
+		ParticipantID string `json:"participant_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.ParticipantID) == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "missing participant_id"})
+		return
+	}
+
+	conv, err := h.convService.CreateOrGetConversation(r.Context(), userID, body.ParticipantID)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to create conversation"})
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(dto.ConversationToDTO(conv, userID))
+}
+
 // GetConversations lists user's conversations
 func (h *RESTHandler) GetConversations(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
