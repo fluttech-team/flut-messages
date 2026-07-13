@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"slices"
 
+	"github.com/flutapp/chat-service/internal/client"
 	"github.com/flutapp/chat-service/internal/domain"
 	"github.com/flutapp/chat-service/internal/repository"
 	"github.com/flutapp/chat-service/internal/utils"
@@ -10,32 +12,49 @@ import (
 )
 
 type ConversationService interface {
-	CreateOrGetConversation(ctx context.Context, userAID, userBID string) (*domain.Conversation, error)
+	// CreateOrGetConversation scopes a conversation to a job application: it
+	// resolves applicant/company via backend-flut (forwarding authHeader) and
+	// verifies requesterID is one of them.
+	CreateOrGetConversation(ctx context.Context, requesterID, authHeader, applicationID string) (*domain.Conversation, error)
 	GetConversations(ctx context.Context, userID string, limit, offset int) ([]*domain.Conversation, error)
 	GetConversation(ctx context.Context, convID string, userID string) (*domain.Conversation, error)
 }
 
 type conversationService struct {
-	repo repository.ConversationRepository
+	repo        repository.ConversationRepository
+	backendFlut client.BackendFlutClient
 }
 
-func NewConversationService(repo repository.ConversationRepository) ConversationService {
-	return &conversationService{repo}
+func NewConversationService(repo repository.ConversationRepository, backendFlut client.BackendFlutClient) ConversationService {
+	return &conversationService{repo: repo, backendFlut: backendFlut}
 }
 
-func (s *conversationService) CreateOrGetConversation(ctx context.Context, userAID, userBID string) (*domain.Conversation, error) {
-	// Try to find existing conversation
-	conv, err := s.repo.FindByParticipants(ctx, []string{userAID, userBID})
+func (s *conversationService) CreateOrGetConversation(ctx context.Context, requesterID, authHeader, applicationID string) (*domain.Conversation, error) {
+	// Already created for this application? Just verify the caller belongs to it.
+	conv, err := s.repo.FindByApplicationID(ctx, applicationID)
 	if err != nil {
 		return nil, err
 	}
 	if conv != nil {
+		if !slices.Contains(conv.ParticipantIDs, requesterID) {
+			return nil, utils.ErrForbidden
+		}
 		return conv, nil
 	}
 
-	// Create new conversation if not found
+	// First time: ask backend-flut who the two parties are. It re-validates
+	// the JWT and confirms requesterID is actually a party to this application.
+	participants, err := s.backendFlut.GetApplicationParticipants(ctx, authHeader, applicationID)
+	if err != nil {
+		return nil, err
+	}
+	if requesterID != participants.ApplicantID && requesterID != participants.CompanyID {
+		return nil, utils.ErrForbidden
+	}
+
 	newConv := &domain.Conversation{
-		ParticipantIDs: []string{userAID, userBID},
+		ApplicationID:  applicationID,
+		ParticipantIDs: []string{participants.ApplicantID, participants.CompanyID},
 	}
 	return s.repo.Create(ctx, newConv)
 }
@@ -58,15 +77,7 @@ func (s *conversationService) GetConversation(ctx context.Context, convID string
 		return nil, utils.ErrConversationNotFound
 	}
 
-	// Check if user is a participant
-	isParticipant := false
-	for _, p := range conv.ParticipantIDs {
-		if p == userID {
-			isParticipant = true
-			break
-		}
-	}
-	if !isParticipant {
+	if !slices.Contains(conv.ParticipantIDs, userID) {
 		return nil, utils.ErrUserNotParticipant
 	}
 

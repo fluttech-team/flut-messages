@@ -25,7 +25,7 @@ func LoadConfig() (*Config, error) {
 		JWTSecret:  os.Getenv("JWT_SECRET"),
 		Port:       getEnvOrDefault("PORT", "3001"),
 		Env:        getEnvOrDefault("ENV", "development"),
-		BackendURL: getEnvOrDefault("BACKEND_FLUT_URL", "http://localhost:3000"),
+		BackendURL: getEnvOrDefault("BACKEND_FLUT_URL", "http://localhost:8080/api/v1"),
 	}, nil
 }
 

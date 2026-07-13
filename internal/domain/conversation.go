@@ -8,6 +8,7 @@ import (
 
 type Conversation struct {
 	ID             primitive.ObjectID `bson:"_id,omitempty"`
+	ApplicationID  string             `bson:"application_id"`
 	ParticipantIDs []string           `bson:"participant_ids"`
 	CreatedAt      time.Time          `bson:"created_at"`
 	UpdatedAt      time.Time          `bson:"updated_at"`

@@ -10,9 +10,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/flutapp/chat-service/internal/client"
 	"github.com/flutapp/chat-service/internal/config"
 	"github.com/flutapp/chat-service/internal/handler"
 	"github.com/flutapp/chat-service/internal/hub"
+	"github.com/flutapp/chat-service/internal/middleware"
 	"github.com/flutapp/chat-service/internal/repository"
 	"github.com/flutapp/chat-service/internal/rest"
 	"github.com/flutapp/chat-service/internal/service"
@@ -87,7 +89,8 @@ func main() {
 
 	// Initialize services
 	authService := service.NewAuthService(cfg.JWTSecret)
-	conversationService := service.NewConversationService(conversationRepo)
+	backendFlutClient := client.NewBackendFlutClient(cfg.BackendURL)
+	conversationService := service.NewConversationService(conversationRepo, backendFlutClient)
 	messageService := service.NewMessageService(messageRepo, conversationRepo, blockRepo)
 	blockService := service.NewBlockService(blockRepo)
 
@@ -103,14 +106,15 @@ func main() {
 	// Setup HTTP routes
 	mux := http.NewServeMux()
 
-	// REST endpoints
-	mux.HandleFunc("POST /conversations", restHandler.CreateConversation)
-	mux.HandleFunc("GET /conversations", restHandler.GetConversations)
-	mux.HandleFunc("GET /conversations/{id}/messages", restHandler.GetMessages)
-	mux.HandleFunc("GET /conversations/{id}/search", restHandler.SearchMessages)
-	mux.HandleFunc("POST /users/{id}/block", restHandler.BlockUser)
-	mux.HandleFunc("DELETE /users/{id}/block", restHandler.UnblockUser)
-	mux.HandleFunc("GET /users/blocked-list", restHandler.GetBlockedList)
+	// REST endpoints (all require a valid Bearer JWT)
+	requireAuth := middleware.RequireAuth(authService)
+	mux.Handle("POST /conversations", requireAuth(http.HandlerFunc(restHandler.CreateConversation)))
+	mux.Handle("GET /conversations", requireAuth(http.HandlerFunc(restHandler.GetConversations)))
+	mux.Handle("GET /conversations/{id}/messages", requireAuth(http.HandlerFunc(restHandler.GetMessages)))
+	mux.Handle("GET /conversations/{id}/search", requireAuth(http.HandlerFunc(restHandler.SearchMessages)))
+	mux.Handle("POST /users/{id}/block", requireAuth(http.HandlerFunc(restHandler.BlockUser)))
+	mux.Handle("DELETE /users/{id}/block", requireAuth(http.HandlerFunc(restHandler.UnblockUser)))
+	mux.Handle("GET /users/blocked-list", requireAuth(http.HandlerFunc(restHandler.GetBlockedList)))
 
 	// WebSocket endpoint
 	mux.HandleFunc("/ws", handleWebSocket(h, authService, wsHandler))
@@ -158,19 +162,11 @@ func handleWebSocket(h *hub.Hub, authService service.AuthService, wsHandler *han
 			return
 		}
 
-		// For testing: use hardcoded userID if token is mock
-		var userID string
-		if token == "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0ZXN0LXVzZXItMDAxIiwiZW1haWwiOiJ0ZXN0MUBleGFtcGxlLmNvbSIsInNjb3BlIjoibW9iaWxlIiwiZXhwIjo5OTk5OTk5OTk5fQ.mock" {
-			userID = "test-user-001"
-		} else {
-			// Verify token with auth service for real tokens
-			var err error
-			userID, err = authService.VerifyToken(token)
-			if err != nil {
-				log.Printf("Token verification failed: %v", err)
-				http.Error(w, "Invalid token", http.StatusUnauthorized)
-				return
-			}
+		userID, err := authService.VerifyToken(token)
+		if err != nil {
+			log.Printf("Token verification failed: %v", err)
+			http.Error(w, "Invalid token", http.StatusUnauthorized)
+			return
 		}
 
 		// Upgrade connection
@@ -304,7 +300,7 @@ func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-User-ID")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		w.Header().Set("Access-Control-Max-Age", "3600")
 
 		// Handle preflight requests

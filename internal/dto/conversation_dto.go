@@ -8,6 +8,7 @@ import (
 
 type ConversationResponse struct {
 	ID             string             `json:"id"`
+	ApplicationID  string             `json:"application_id"`
 	ParticipantIDs []string           `json:"participant_ids"`
 	LastMessage    *MessagePreviewDTO `json:"last_message"`
 	UnreadCount    int                `json:"unread_count"`
@@ -35,6 +36,7 @@ func ConversationToDTO(conv *domain.Conversation, userID string) ConversationRes
 
 	return ConversationResponse{
 		ID:             conv.ID.Hex(),
+		ApplicationID:  conv.ApplicationID,
 		ParticipantIDs: conv.ParticipantIDs,
 		LastMessage:    lastMsgDTO,
 		UnreadCount:    conv.UnreadCount[userID],

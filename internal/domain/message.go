@@ -19,6 +19,7 @@ type Message struct {
 	EditedAt        *time.Time         `bson:"edited_at"`
 	IsDeleted       bool               `bson:"is_deleted"`
 	Attachments     []Attachment       `bson:"attachments"`
+	TemplateType    *string            `bson:"template_type,omitempty"` // system/template messages migrated from backend-flut
 }
 
 type Attachment struct {

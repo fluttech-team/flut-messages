@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/flutapp/chat-service/internal/dto"
+	"github.com/flutapp/chat-service/internal/middleware"
 	"github.com/flutapp/chat-service/internal/service"
 	"github.com/flutapp/chat-service/internal/utils"
 )
@@ -31,12 +32,12 @@ func NewRESTHandler(
 	}
 }
 
-// getUserID extracts and validates the X-User-ID header
+// getUserID reads the userID resolved by middleware.RequireAuth.
 func getUserID(w http.ResponseWriter, r *http.Request) (string, bool) {
-	userID := r.Header.Get("X-User-ID")
-	if userID == "" {
+	userID, ok := middleware.UserID(r)
+	if !ok {
 		w.WriteHeader(http.StatusUnauthorized)
-		json.NewEncoder(w).Encode(map[string]string{"error": "missing X-User-ID header"})
+		json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized"})
 		return "", false
 	}
 	return userID, true
@@ -65,30 +66,33 @@ func parseQueryParams(r *http.Request, defaultLimit, maxLimit int) (int, int) {
 	return limit, offset
 }
 
-// CreateConversation creates (or gets) a 1-to-1 conversation between the
-// requester and a target participant.
+// CreateConversation creates (or gets) the conversation scoped to a job application.
 func (h *RESTHandler) CreateConversation(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	// Get X-User-ID header
+	// Get authenticated userID
 	userID, ok := getUserID(w, r)
 	if !ok {
 		return
 	}
 
 	var body struct {
-		ParticipantID string `json:"participant_id"`
+		ApplicationID string `json:"application_id"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.ParticipantID) == "" {
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.ApplicationID) == "" {
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "missing participant_id"})
+		json.NewEncoder(w).Encode(map[string]string{"error": "missing application_id"})
 		return
 	}
 
-	conv, err := h.convService.CreateOrGetConversation(r.Context(), userID, body.ParticipantID)
+	conv, err := h.convService.CreateOrGetConversation(r.Context(), userID, r.Header.Get("Authorization"), body.ApplicationID)
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "failed to create conversation"})
+		if err == utils.ErrForbidden {
+			w.WriteHeader(http.StatusForbidden)
+		} else {
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 		return
 	}
 
@@ -100,7 +104,7 @@ func (h *RESTHandler) CreateConversation(w http.ResponseWriter, r *http.Request)
 func (h *RESTHandler) GetConversations(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	// Get X-User-ID header
+	// Get authenticated userID
 	userID, ok := getUserID(w, r)
 	if !ok {
 		return
@@ -132,15 +136,13 @@ func (h *RESTHandler) GetConversations(w http.ResponseWriter, r *http.Request) {
 func (h *RESTHandler) GetMessages(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	// Get X-User-ID header
+	// Get authenticated userID
 	userID, ok := getUserID(w, r)
 	if !ok {
 		return
 	}
 
-	// Extract convID from URL path
-	convID := strings.TrimPrefix(r.URL.Path, "/conversations/")
-	convID = strings.TrimSuffix(convID, "/messages")
+	convID := r.PathValue("id")
 	if convID == "" {
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]string{"error": "invalid conversation ID"})
@@ -178,15 +180,13 @@ func (h *RESTHandler) GetMessages(w http.ResponseWriter, r *http.Request) {
 func (h *RESTHandler) SearchMessages(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	// Get X-User-ID header
+	// Get authenticated userID
 	userID, ok := getUserID(w, r)
 	if !ok {
 		return
 	}
 
-	// Extract convID from URL path
-	convID := strings.TrimPrefix(r.URL.Path, "/conversations/")
-	convID = strings.TrimSuffix(convID, "/search")
+	convID := r.PathValue("id")
 	if convID == "" {
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]string{"error": "invalid conversation ID"})
@@ -229,15 +229,13 @@ func (h *RESTHandler) SearchMessages(w http.ResponseWriter, r *http.Request) {
 func (h *RESTHandler) BlockUser(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	// Get X-User-ID header
+	// Get authenticated userID
 	userID, ok := getUserID(w, r)
 	if !ok {
 		return
 	}
 
-	// Extract targetID from URL path
-	targetID := strings.TrimPrefix(r.URL.Path, "/users/")
-	targetID = strings.TrimSuffix(targetID, "/block")
+	targetID := r.PathValue("id")
 	if targetID == "" {
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]string{"error": "invalid target ID"})
@@ -265,15 +263,13 @@ func (h *RESTHandler) BlockUser(w http.ResponseWriter, r *http.Request) {
 func (h *RESTHandler) UnblockUser(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	// Get X-User-ID header
+	// Get authenticated userID
 	userID, ok := getUserID(w, r)
 	if !ok {
 		return
 	}
 
-	// Extract targetID from URL path
-	targetID := strings.TrimPrefix(r.URL.Path, "/users/")
-	targetID = strings.TrimSuffix(targetID, "/unblock")
+	targetID := r.PathValue("id")
 	if targetID == "" {
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]string{"error": "invalid target ID"})
@@ -296,7 +292,7 @@ func (h *RESTHandler) UnblockUser(w http.ResponseWriter, r *http.Request) {
 func (h *RESTHandler) GetBlockedList(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	// Get X-User-ID header
+	// Get authenticated userID
 	userID, ok := getUserID(w, r)
 	if !ok {
 		return

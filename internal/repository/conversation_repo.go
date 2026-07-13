@@ -13,7 +13,7 @@ import (
 
 type ConversationRepository interface {
 	Create(ctx context.Context, conversation *domain.Conversation) (*domain.Conversation, error)
-	FindByParticipants(ctx context.Context, userIDs []string) (*domain.Conversation, error)
+	FindByApplicationID(ctx context.Context, applicationID string) (*domain.Conversation, error)
 	FindByID(ctx context.Context, id primitive.ObjectID) (*domain.Conversation, error)
 	FindByUserID(ctx context.Context, userID string, limit int64, offset int64) ([]*domain.Conversation, error)
 	UpdateLastMessage(ctx context.Context, conversationID primitive.ObjectID, message *domain.MessagePreview) error
@@ -39,6 +39,10 @@ func NewConversationRepository(db *mongo.Database) (ConversationRepository, erro
 				{Key: "participant_ids", Value: 1},
 				{Key: "updated_at", Value: -1},
 			},
+		},
+		{
+			Keys:    bson.D{{Key: "application_id", Value: 1}},
+			Options: options.Index().SetUnique(true),
 		},
 	}
 
@@ -85,6 +89,19 @@ func (r *conversationRepo) FindByParticipants(ctx context.Context, userIDs []str
 
 	var conversation domain.Conversation
 	err := r.collection.FindOne(ctx, filter).Decode(&conversation)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	return &conversation, nil
+}
+
+func (r *conversationRepo) FindByApplicationID(ctx context.Context, applicationID string) (*domain.Conversation, error) {
+	var conversation domain.Conversation
+	err := r.collection.FindOne(ctx, bson.M{"application_id": applicationID}).Decode(&conversation)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
 			return nil, nil
