@@ -9,7 +9,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
-type messageRepoStub struct{}
+type messageRepoStub struct{ message *domain.Message }
 
 func (messageRepoStub) Insert(context.Context, *domain.Message) (*domain.Message, error) {
 	panic("unexpected insert")
@@ -79,5 +79,66 @@ func TestSendMessageRejectsReceiverOutsideConversation(t *testing.T) {
 	)
 	if err != utils.ErrUserNotParticipant {
 		t.Fatalf("expected ErrUserNotParticipant, got %v", err)
+	}
+}
+
+type markReadMessageRepoStub struct {
+	message *domain.Message
+}
+
+func (s markReadMessageRepoStub) Insert(context.Context, *domain.Message) (*domain.Message, error) {
+	return nil, nil
+}
+func (s markReadMessageRepoStub) FindByConversationID(context.Context, primitive.ObjectID, int64, int64) ([]*domain.Message, error) {
+	return nil, nil
+}
+func (s markReadMessageRepoStub) FindByID(context.Context, primitive.ObjectID) (*domain.Message, error) {
+	return s.message, nil
+}
+func (s markReadMessageRepoStub) UpdateStatus(context.Context, primitive.ObjectID, string) error {
+	return nil
+}
+func (s markReadMessageRepoStub) MarkDeleted(context.Context, primitive.ObjectID) error { return nil }
+func (s markReadMessageRepoStub) Update(context.Context, primitive.ObjectID, string) error {
+	return nil
+}
+func (s markReadMessageRepoStub) SearchByText(context.Context, primitive.ObjectID, string) ([]*domain.Message, error) {
+	return nil, nil
+}
+func (s markReadMessageRepoStub) FindUnreadByUserID(context.Context, string) ([]*domain.Message, error) {
+	return nil, nil
+}
+
+type markReadConversationRepoStub struct {
+	conversationRepoStub
+	resetConversationID primitive.ObjectID
+	resetUserID         string
+}
+
+func (s *markReadConversationRepoStub) ResetUnreadCount(_ context.Context, conversationID primitive.ObjectID, userID string) error {
+	s.resetConversationID = conversationID
+	s.resetUserID = userID
+	return nil
+}
+
+func TestMarkAsReadResetsConversationUnreadCount(t *testing.T) {
+	conversationID := primitive.NewObjectID()
+	messageID := primitive.NewObjectID()
+	convRepo := &markReadConversationRepoStub{}
+	svc := NewMessageService(
+		markReadMessageRepoStub{message: &domain.Message{
+			ID:             messageID,
+			ConversationID: conversationID,
+			ReceiverID:     "candidate-1",
+		}},
+		convRepo,
+		blockRepoStub{},
+	)
+
+	if err := svc.MarkAsRead(context.Background(), messageID.Hex(), "candidate-1"); err != nil {
+		t.Fatalf("MarkAsRead returned error: %v", err)
+	}
+	if convRepo.resetConversationID != conversationID || convRepo.resetUserID != "candidate-1" {
+		t.Fatalf("expected unread count reset for conversation and receiver")
 	}
 }
