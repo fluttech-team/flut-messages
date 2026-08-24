@@ -122,7 +122,7 @@ func (h *RESTHandler) GetConversations(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Convert to DTOs
-	var results []dto.ConversationResponse
+	results := make([]dto.ConversationResponse, 0, len(conversations))
 	for _, conv := range conversations {
 		results = append(results, dto.ConversationToDTO(conv, userID))
 	}
@@ -166,7 +166,7 @@ func (h *RESTHandler) GetMessages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Convert to DTOs
-	var results []dto.MessageResponse
+	results := make([]dto.MessageResponse, 0, len(messages))
 	for _, msg := range messages {
 		results = append(results, dto.MessageToDTO(msg))
 	}
