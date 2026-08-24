@@ -108,6 +108,11 @@ func main() {
 
 	// REST endpoints (all require a valid Bearer JWT)
 	requireAuth := middleware.RequireAuth(authService)
+	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	})
 	mux.Handle("POST /conversations", requireAuth(http.HandlerFunc(restHandler.CreateConversation)))
 	mux.Handle("GET /conversations", requireAuth(http.HandlerFunc(restHandler.GetConversations)))
 	mux.Handle("GET /conversations/{id}/messages", requireAuth(http.HandlerFunc(restHandler.GetMessages)))
