@@ -97,9 +97,9 @@ func (h *WebSocketHandler) handleJoinConversation(ctx context.Context, client *h
 		}
 	}
 
-	// For testing: skip database verification
-	// In production, verify user is a participant in the conversation
-	log.Printf("DEBUG: Joining conversation %s for user %s", req.ConversationID, client.ID)
+	if _, err := h.convService.GetConversation(ctx, req.ConversationID, client.ID); err != nil {
+		return h.mapError(err)
+	}
 
 	// Join room with conversation ID
 	h.hub.JoinRoom(client, req.ConversationID)
@@ -108,9 +108,9 @@ func (h *WebSocketHandler) handleJoinConversation(ctx context.Context, client *h
 	h.hub.Broadcast([]string{req.ConversationID}, BroadcastEvent{
 		Type: "user_online",
 		Payload: map[string]interface{}{
-			"user_id":           client.ID,
-			"conversation_id":   req.ConversationID,
-			"timestamp":         time.Now(),
+			"user_id":         client.ID,
+			"conversation_id": req.ConversationID,
+			"timestamp":       time.Now(),
 		},
 	})
 
@@ -130,9 +130,9 @@ func (h *WebSocketHandler) handleJoinConversation(ctx context.Context, client *h
 // handleSendMessage - send_message event
 func (h *WebSocketHandler) handleSendMessage(ctx context.Context, client *hub.Client, payload json.RawMessage) AckResponse {
 	var req struct {
-		ConversationID string               `json:"conversation_id"`
-		ReceiverID     string               `json:"receiver_id"`
-		Text           string               `json:"text"`
+		ConversationID string              `json:"conversation_id"`
+		ReceiverID     string              `json:"receiver_id"`
+		Text           string              `json:"text"`
 		Attachments    []domain.Attachment `json:"attachments"`
 	}
 
@@ -200,10 +200,10 @@ func (h *WebSocketHandler) handleMarkAsRead(ctx context.Context, client *hub.Cli
 	h.hub.Broadcast([]string{req.ConversationID}, BroadcastEvent{
 		Type: "message_read",
 		Payload: map[string]interface{}{
-			"message_id":       req.MessageID,
-			"user_id":          client.ID,
-			"conversation_id":  req.ConversationID,
-			"read_at":          time.Now(),
+			"message_id":      req.MessageID,
+			"user_id":         client.ID,
+			"conversation_id": req.ConversationID,
+			"read_at":         time.Now(),
 		},
 	})
 
@@ -233,9 +233,9 @@ func (h *WebSocketHandler) handleTyping(ctx context.Context, client *hub.Client,
 	h.hub.Broadcast([]string{req.ConversationID}, BroadcastEvent{
 		Type: "user_typing",
 		Payload: map[string]interface{}{
-			"user_id":          client.ID,
-			"conversation_id":  req.ConversationID,
-			"timestamp":        time.Now(),
+			"user_id":         client.ID,
+			"conversation_id": req.ConversationID,
+			"timestamp":       time.Now(),
 		},
 	})
 
@@ -270,10 +270,10 @@ func (h *WebSocketHandler) handleDeleteMessage(ctx context.Context, client *hub.
 	h.hub.Broadcast([]string{req.ConversationID}, BroadcastEvent{
 		Type: "message_deleted",
 		Payload: map[string]interface{}{
-			"message_id":       req.MessageID,
-			"user_id":          client.ID,
-			"conversation_id":  req.ConversationID,
-			"deleted_at":       time.Now(),
+			"message_id":      req.MessageID,
+			"user_id":         client.ID,
+			"conversation_id": req.ConversationID,
+			"deleted_at":      time.Now(),
 		},
 	})
 
@@ -309,11 +309,11 @@ func (h *WebSocketHandler) handleEditMessage(ctx context.Context, client *hub.Cl
 	h.hub.Broadcast([]string{req.ConversationID}, BroadcastEvent{
 		Type: "message_edited",
 		Payload: map[string]interface{}{
-			"message_id":       req.MessageID,
-			"user_id":          client.ID,
-			"conversation_id":  req.ConversationID,
-			"new_text":         req.NewText,
-			"edited_at":        time.Now(),
+			"message_id":      req.MessageID,
+			"user_id":         client.ID,
+			"conversation_id": req.ConversationID,
+			"new_text":        req.NewText,
+			"edited_at":       time.Now(),
 		},
 	})
 
@@ -345,9 +345,9 @@ func (h *WebSocketHandler) handleLeaveConversation(ctx context.Context, client *
 	h.hub.Broadcast([]string{req.ConversationID}, BroadcastEvent{
 		Type: "user_offline",
 		Payload: map[string]interface{}{
-			"user_id":          client.ID,
-			"conversation_id":  req.ConversationID,
-			"timestamp":        time.Now(),
+			"user_id":         client.ID,
+			"conversation_id": req.ConversationID,
+			"timestamp":       time.Now(),
 		},
 	})
 

@@ -21,9 +21,9 @@ type MessageService interface {
 }
 
 type messageService struct {
-	msgRepo    repository.MessageRepository
-	convRepo   repository.ConversationRepository
-	blockRepo  repository.BlockRepository
+	msgRepo   repository.MessageRepository
+	convRepo  repository.ConversationRepository
+	blockRepo repository.BlockRepository
 }
 
 func NewMessageService(msgRepo repository.MessageRepository, convRepo repository.ConversationRepository, blockRepo repository.BlockRepository) MessageService {
@@ -55,15 +55,18 @@ func (s *messageService) SendMessage(ctx context.Context, convID string, senderI
 		return nil, utils.ErrConversationNotFound
 	}
 
-	// Verify sender is a participant
-	isParticipant := false
+	// Both sender and receiver must be participants in this conversation.
+	senderIsParticipant := false
+	receiverIsParticipant := false
 	for _, p := range conv.ParticipantIDs {
 		if p == senderID {
-			isParticipant = true
-			break
+			senderIsParticipant = true
+		}
+		if p == receiverID {
+			receiverIsParticipant = true
 		}
 	}
-	if !isParticipant {
+	if !senderIsParticipant || !receiverIsParticipant || senderID == receiverID {
 		return nil, utils.ErrUserNotParticipant
 	}
 
