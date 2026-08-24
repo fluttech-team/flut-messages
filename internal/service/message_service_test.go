@@ -50,6 +50,9 @@ func (conversationRepoStub) UpdateLastMessage(context.Context, primitive.ObjectI
 func (conversationRepoStub) UpdateUnreadCount(context.Context, primitive.ObjectID, string, int) error {
 	return nil
 }
+func (conversationRepoStub) ResetUnreadCount(context.Context, primitive.ObjectID, string) error {
+	return nil
+}
 
 type blockRepoStub struct{}
 

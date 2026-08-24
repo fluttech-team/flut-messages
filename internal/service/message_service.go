@@ -176,8 +176,11 @@ func (s *messageService) MarkAsRead(ctx context.Context, messageID string, userI
 		return utils.ErrForbidden
 	}
 
-	// Update status to read
-	return s.msgRepo.UpdateStatus(ctx, msgObjID, "read")
+	if err := s.msgRepo.UpdateStatus(ctx, msgObjID, "read"); err != nil {
+		return err
+	}
+
+	return s.convRepo.ResetUnreadCount(ctx, msg.ConversationID, userID)
 }
 
 func (s *messageService) DeleteMessage(ctx context.Context, messageID string, userID string) error {
