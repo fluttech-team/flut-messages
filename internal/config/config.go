@@ -9,12 +9,12 @@ import (
 )
 
 type Config struct {
-	MongoDBURI    string
-	JWTSecret     string
-	Port          string
-	Env           string
-	BackendURL    string
-	MongoClient   *mongo.Client
+	MongoDBURI  string
+	JWTSecret   string
+	Port        string
+	Env         string
+	BackendURL  string
+	MongoClient *mongo.Client
 }
 
 func LoadConfig() (*Config, error) {
@@ -22,11 +22,20 @@ func LoadConfig() (*Config, error) {
 
 	return &Config{
 		MongoDBURI: os.Getenv("MONGODB_URI"),
-		JWTSecret:  os.Getenv("JWT_SECRET"),
+		JWTSecret:  getFirstEnv("JWT_SECRET", "JWT_ACCESS_SECRET"),
 		Port:       getEnvOrDefault("PORT", "3001"),
 		Env:        getEnvOrDefault("ENV", "development"),
 		BackendURL: getEnvOrDefault("BACKEND_FLUT_URL", "http://localhost:8080/api/v1"),
 	}, nil
+}
+
+func getFirstEnv(keys ...string) string {
+	for _, key := range keys {
+		if value := os.Getenv(key); value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func getEnvOrDefault(key, defaultVal string) string {

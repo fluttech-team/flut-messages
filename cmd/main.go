@@ -108,6 +108,11 @@ func main() {
 
 	// REST endpoints (all require a valid Bearer JWT)
 	requireAuth := middleware.RequireAuth(authService)
+	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	})
 	mux.Handle("POST /conversations", requireAuth(http.HandlerFunc(restHandler.CreateConversation)))
 	mux.Handle("GET /conversations", requireAuth(http.HandlerFunc(restHandler.GetConversations)))
 	mux.Handle("GET /conversations/{id}/messages", requireAuth(http.HandlerFunc(restHandler.GetMessages)))
@@ -117,7 +122,7 @@ func main() {
 	mux.Handle("GET /users/blocked-list", requireAuth(http.HandlerFunc(restHandler.GetBlockedList)))
 
 	// WebSocket endpoint
-	mux.HandleFunc("/ws", handleWebSocket(h, authService, wsHandler))
+	mux.Handle("/ws", requireAuth(http.HandlerFunc(handleWebSocket(h, wsHandler))))
 
 	// Create HTTP server with CORS middleware
 	server := &http.Server{
@@ -153,19 +158,11 @@ func main() {
 }
 
 // handleWebSocket returns a handler for WebSocket connections
-func handleWebSocket(h *hub.Hub, authService service.AuthService, wsHandler *handler.WebSocketHandler) http.HandlerFunc {
+func handleWebSocket(h *hub.Hub, wsHandler *handler.WebSocketHandler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Extract token from query parameter
-		token := r.URL.Query().Get("token")
-		if token == "" {
-			http.Error(w, "Missing token", http.StatusUnauthorized)
-			return
-		}
-
-		userID, err := authService.VerifyToken(token)
-		if err != nil {
-			log.Printf("Token verification failed: %v", err)
-			http.Error(w, "Invalid token", http.StatusUnauthorized)
+		userID, ok := middleware.UserID(r)
+		if !ok {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 

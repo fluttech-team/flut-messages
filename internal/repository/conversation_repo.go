@@ -18,6 +18,7 @@ type ConversationRepository interface {
 	FindByUserID(ctx context.Context, userID string, limit int64, offset int64) ([]*domain.Conversation, error)
 	UpdateLastMessage(ctx context.Context, conversationID primitive.ObjectID, message *domain.MessagePreview) error
 	UpdateUnreadCount(ctx context.Context, conversationID primitive.ObjectID, userID string, increment int) error
+	ResetUnreadCount(ctx context.Context, conversationID primitive.ObjectID, userID string) error
 }
 
 type conversationRepo struct {
@@ -179,6 +180,16 @@ func (r *conversationRepo) UpdateUnreadCount(ctx context.Context, conversationID
 		"$inc": bson.M{
 			"unread_count." + userID: increment,
 		},
+	}
+
+	_, err := r.collection.UpdateOne(ctx, filter, update)
+	return err
+}
+
+func (r *conversationRepo) ResetUnreadCount(ctx context.Context, conversationID primitive.ObjectID, userID string) error {
+	filter := bson.M{"_id": conversationID}
+	update := bson.M{
+		"$set": bson.M{"unread_count." + userID: 0},
 	}
 
 	_, err := r.collection.UpdateOne(ctx, filter, update)
