@@ -14,9 +14,10 @@ import (
 
 // RESTHandler handles REST API endpoints
 type RESTHandler struct {
-	convService  service.ConversationService
-	msgService   service.MessageService
-	blockService service.BlockService
+	convService   service.ConversationService
+	msgService    service.MessageService
+	blockService  service.BlockService
+	ticketService service.WebSocketTicketService
 }
 
 // NewRESTHandler creates a new RESTHandler
@@ -24,12 +25,35 @@ func NewRESTHandler(
 	convService service.ConversationService,
 	msgService service.MessageService,
 	blockService service.BlockService,
+	ticketService service.WebSocketTicketService,
 ) *RESTHandler {
 	return &RESTHandler{
-		convService:  convService,
-		msgService:   msgService,
-		blockService: blockService,
+		convService:   convService,
+		msgService:    msgService,
+		blockService:  blockService,
+		ticketService: ticketService,
 	}
+}
+
+// IssueWebSocketTicket creates a short-lived credential for a browser
+// WebSocket handshake. The authenticated JWT itself never enters the URL.
+func (h *RESTHandler) IssueWebSocketTicket(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	userID, ok := getUserID(w, r)
+	if !ok {
+		return
+	}
+	ticket, expiresAt, err := h.ticketService.Issue(userID)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed to issue websocket ticket"})
+		return
+	}
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"ticket":     ticket,
+		"expires_at": expiresAt,
+	})
 }
 
 // getUserID reads the userID resolved by middleware.RequireAuth.

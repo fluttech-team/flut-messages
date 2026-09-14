@@ -93,6 +93,7 @@ func main() {
 	conversationService := service.NewConversationService(conversationRepo, backendFlutClient)
 	messageService := service.NewMessageService(messageRepo, conversationRepo, blockRepo)
 	blockService := service.NewBlockService(blockRepo)
+	ticketService := service.NewWebSocketTicketService(30*time.Second, time.Now)
 
 	// Initialize Hub and start it
 	h := hub.NewHub()
@@ -101,7 +102,7 @@ func main() {
 
 	// Initialize handlers
 	wsHandler := handler.NewWebSocketHandler(messageService, conversationService, h, blockService)
-	restHandler := rest.NewRESTHandler(conversationService, messageService, blockService)
+	restHandler := rest.NewRESTHandler(conversationService, messageService, blockService, ticketService)
 
 	// Setup HTTP routes
 	mux := http.NewServeMux()
@@ -120,9 +121,10 @@ func main() {
 	mux.Handle("POST /users/{id}/block", requireAuth(http.HandlerFunc(restHandler.BlockUser)))
 	mux.Handle("DELETE /users/{id}/block", requireAuth(http.HandlerFunc(restHandler.UnblockUser)))
 	mux.Handle("GET /users/blocked-list", requireAuth(http.HandlerFunc(restHandler.GetBlockedList)))
+	mux.Handle("POST /ws-tickets", requireAuth(http.HandlerFunc(restHandler.IssueWebSocketTicket)))
 
 	// WebSocket endpoint
-	mux.Handle("/ws", requireAuth(http.HandlerFunc(handleWebSocket(h, wsHandler))))
+	mux.Handle("/ws", middleware.RequireWebSocketAuth(authService, ticketService)(http.HandlerFunc(handleWebSocket(h, wsHandler))))
 
 	// Create HTTP server with CORS middleware
 	server := &http.Server{
