@@ -56,6 +56,7 @@ func main() {
 	}
 
 	log.Printf("Starting server on port %s (env: %s)", cfg.Port, cfg.Env)
+	upgrader.CheckOrigin = originChecker(cfg.AllowedOrigins)
 
 	// Connect to MongoDB
 	mongoClient, err := repository.NewMongoClient(cfg.MongoDBURI)
@@ -129,7 +130,7 @@ func main() {
 	// Create HTTP server with CORS middleware
 	server := &http.Server{
 		Addr:         ":" + cfg.Port,
-		Handler:      corsMiddleware(mux),
+		Handler:      corsMiddleware(cfg.AllowedOrigins, mux),
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  60 * time.Second,
@@ -294,17 +295,47 @@ func writePump(client *hub.Client) {
 	}
 }
 
-// corsMiddleware adds CORS headers to all responses
-func corsMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-		w.Header().Set("Access-Control-Max-Age", "3600")
+func originChecker(allowedOrigins []string) func(*http.Request) bool {
+	allowed := make(map[string]struct{}, len(allowedOrigins))
+	for _, origin := range allowedOrigins {
+		allowed[origin] = struct{}{}
+	}
 
-		// Handle preflight requests
+	return func(r *http.Request) bool {
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			return true
+		}
+		_, ok := allowed[origin]
+		return ok
+	}
+}
+
+// corsMiddleware grants browser access only to explicitly configured origins.
+func corsMiddleware(allowedOrigins []string, next http.Handler) http.Handler {
+	isAllowed := originChecker(allowedOrigins)
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		origin := r.Header.Get("Origin")
+		if origin != "" {
+			w.Header().Add("Vary", "Origin")
+			if !isAllowed(r) {
+				if r.Method == http.MethodOptions {
+					http.Error(w, "origin not allowed", http.StatusForbidden)
+					return
+				}
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			w.Header().Set("Access-Control-Max-Age", "3600")
+		}
+
 		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusOK)
+			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 
