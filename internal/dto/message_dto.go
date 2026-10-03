@@ -9,6 +9,7 @@ import (
 type MessageResponse struct {
 	ID           string              `json:"id"`
 	Text         string              `json:"text"`
+	ActorID      string              `json:"actor_id,omitempty"`
 	SenderID     string              `json:"sender_id"`
 	ReceiverID   string              `json:"receiver_id"`
 	Status       string              `json:"status"`
@@ -25,6 +26,7 @@ func MessageToDTO(msg *domain.Message) MessageResponse {
 		ID:           msg.ID.Hex(),
 		Text:         msg.Text,
 		SenderID:     msg.SenderID,
+		ActorID:      msg.ActorID,
 		ReceiverID:   msg.ReceiverID,
 		Status:       msg.Status,
 		CreatedAt:    msg.CreatedAt,

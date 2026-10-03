@@ -39,11 +39,11 @@ func NewRESTHandler(
 // WebSocket handshake. The authenticated JWT itself never enters the URL.
 func (h *RESTHandler) IssueWebSocketTicket(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	userID, ok := getUserID(w, r)
+	_, ok := getUserID(w, r)
 	if !ok {
 		return
 	}
-	ticket, expiresAt, err := h.ticketService.Issue(userID)
+	ticket, expiresAt, err := h.ticketService.Issue(middleware.TicketIdentity(r))
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed to issue websocket ticket"})

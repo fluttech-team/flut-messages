@@ -109,7 +109,7 @@ func main() {
 	mux := http.NewServeMux()
 
 	// REST endpoints (all require a valid Bearer JWT)
-	requireAuth := middleware.RequireAuth(authService)
+	requireAuth := middleware.RequireAuth(authService, backendFlutClient)
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -125,7 +125,7 @@ func main() {
 	mux.Handle("POST /ws-tickets", requireAuth(http.HandlerFunc(restHandler.IssueWebSocketTicket)))
 
 	// WebSocket endpoint
-	mux.Handle("/ws", middleware.RequireWebSocketAuth(authService, ticketService)(http.HandlerFunc(handleWebSocket(h, wsHandler))))
+	mux.Handle("/ws", middleware.RequireWebSocketAuth(authService, ticketService, backendFlutClient)(http.HandlerFunc(handleWebSocket(h, wsHandler))))
 
 	// Create HTTP server with CORS middleware
 	server := &http.Server{
@@ -190,13 +190,13 @@ func handleWebSocket(h *hub.Hub, wsHandler *handler.WebSocketHandler) http.Handl
 		h.Register(client)
 
 		// Start read and write pumps
-		go readPump(h, wsHandler, client)
-		go writePump(client)
+		go readPump(h, wsHandler, client, r.Context(), middleware.CompanyValidator(r))
+		go writePump(client, middleware.CompanyValidator(r))
 	}
 }
 
 // readPump reads messages from the WebSocket connection
-func readPump(h *hub.Hub, wsHandler *handler.WebSocketHandler, client *hub.Client) {
+func readPump(h *hub.Hub, wsHandler *handler.WebSocketHandler, client *hub.Client, requestContext context.Context, validate func(context.Context) error) {
 	defer func() {
 		h.Unregister(client)
 		conn := client.Conn.(*websocket.Conn)
@@ -228,7 +228,10 @@ func readPump(h *hub.Hub, wsHandler *handler.WebSocketHandler, client *hub.Clien
 		log.Printf("DEBUG: Received event type %s from client %s", event.Type, client.ID)
 
 		// Handle event
-		ctx := context.Background()
+		ctx := context.WithoutCancel(requestContext)
+		if validate != nil && validate(ctx) != nil {
+			return
+		}
 		response := wsHandler.HandleEvent(ctx, client, event)
 
 		// Send ack response back via client.Send channel
@@ -249,7 +252,7 @@ func readPump(h *hub.Hub, wsHandler *handler.WebSocketHandler, client *hub.Clien
 }
 
 // writePump writes messages to the WebSocket connection
-func writePump(client *hub.Client) {
+func writePump(client *hub.Client, validate func(context.Context) error) {
 	ticker := time.NewTicker(pingInterval)
 	defer func() {
 		ticker.Stop()
@@ -262,6 +265,9 @@ func writePump(client *hub.Client) {
 	for {
 		select {
 		case message, ok := <-client.Send:
+			if validate != nil && validate(context.Background()) != nil {
+				return
+			}
 			conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if !ok {
 				// The hub closed the channel.
@@ -287,6 +293,9 @@ func writePump(client *hub.Client) {
 			}
 
 		case <-ticker.C:
+			if validate != nil && validate(context.Background()) != nil {
+				return
+			}
 			conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
@@ -330,7 +339,7 @@ func corsMiddleware(allowedOrigins []string, next http.Handler) http.Handler {
 
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Company-ID")
 			w.Header().Set("Access-Control-Max-Age", "3600")
 		}
 

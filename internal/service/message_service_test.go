@@ -145,3 +145,26 @@ func TestMarkAsReadResetsConversationUnreadCount(t *testing.T) {
 		t.Fatalf("expected unread count reset for conversation and receiver")
 	}
 }
+
+type actorMessageRepoStub struct {
+	messageRepoStub
+	saved *domain.Message
+}
+
+func (s *actorMessageRepoStub) Insert(_ context.Context, msg *domain.Message) (*domain.Message, error) {
+	s.saved = msg
+	msg.ID = primitive.NewObjectID()
+	return msg, nil
+}
+func TestCompanyMessagePersistsGenuineActorSeparatelyFromSender(t *testing.T) {
+	id := primitive.NewObjectID()
+	repo := &actorMessageRepoStub{}
+	svc := NewMessageService(repo, conversationRepoStub{conversation: &domain.Conversation{ID: id, ParticipantIDs: []string{"candidate", "owner"}}}, blockRepoStub{})
+	_, err := svc.SendMessage(domain.WithChatActor(context.Background(), "member"), id.Hex(), "owner", "candidate", "hello", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if repo.saved.ActorID != "member" || repo.saved.SenderID != "owner" {
+		t.Fatalf("wrong audit/routing identity %+v", repo.saved)
+	}
+}
