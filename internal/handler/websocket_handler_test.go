@@ -65,3 +65,14 @@ func TestJoinConversationRejectsNonParticipant(t *testing.T) {
 		t.Fatalf("expected FORBIDDEN response, got %+v", response)
 	}
 }
+
+func TestConversationEventsRejectOtherCompanyRoom(t *testing.T) {
+	h := NewWebSocketHandler(messageServiceStub{}, conversationServiceStub{getErr: utils.ErrUserNotParticipant}, hub.NewHub(), blockServiceStub{})
+	for _, eventType := range []string{"typing", "mark_as_read", "delete_message", "edit_message", "leave_conversation"} {
+		payload, _ := json.Marshal(map[string]string{"conversation_id": "other-company", "message_id": "message", "new_text": "secret"})
+		response := h.HandleEvent(context.Background(), &hub.Client{ID: "selected-owner", Rooms: map[string]bool{}}, WebSocketEvent{Type: eventType, Payload: payload})
+		if response.Code != "FORBIDDEN" {
+			t.Errorf("%s allowed other company room: %+v", eventType, response)
+		}
+	}
+}

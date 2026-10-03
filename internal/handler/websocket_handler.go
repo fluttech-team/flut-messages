@@ -60,6 +60,18 @@ func NewWebSocketHandler(
 // HandleEvent dispatches incoming WebSocket events to appropriate handlers
 func (h *WebSocketHandler) HandleEvent(ctx context.Context, client *hub.Client, event WebSocketEvent) AckResponse {
 	switch event.Type {
+	case "typing", "mark_as_read", "delete_message", "edit_message", "leave_conversation":
+		var scope struct {
+			ConversationID string `json:"conversation_id"`
+		}
+		if json.Unmarshal(event.Payload, &scope) != nil || scope.ConversationID == "" {
+			return h.mapError(utils.ErrInvalidPayload)
+		}
+		if _, err := h.convService.GetConversation(ctx, scope.ConversationID, client.ID); err != nil {
+			return h.mapError(err)
+		}
+	}
+	switch event.Type {
 	case "join_conversation":
 		return h.handleJoinConversation(ctx, client, event.Payload)
 	case "send_message":

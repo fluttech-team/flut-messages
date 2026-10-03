@@ -91,6 +91,7 @@ func (s *messageService) SendMessage(ctx context.Context, convID string, senderI
 	msg := &domain.Message{
 		ConversationID: convObjID,
 		SenderID:       senderID,
+		ActorID:        domain.ChatActor(ctx),
 		ReceiverID:     receiverID,
 		Text:           text,
 		Attachments:    attachments,

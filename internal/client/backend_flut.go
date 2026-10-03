@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/flutapp/chat-service/internal/domain"
 	"github.com/flutapp/chat-service/internal/utils"
 )
 
@@ -31,7 +32,7 @@ type backendFlutClient struct {
 	http    *http.Client
 }
 
-func NewBackendFlutClient(baseURL string) BackendFlutClient {
+func NewBackendFlutClient(baseURL string) *backendFlutClient {
 	return &backendFlutClient{baseURL: baseURL, http: &http.Client{Timeout: 5 * time.Second}}
 }
 
@@ -45,6 +46,7 @@ func (c *backendFlutClient) GetApplicationParticipants(ctx context.Context, auth
 		return nil, err
 	}
 	req.Header.Set("Authorization", authHeader)
+	req.Header.Set("X-Company-ID", domain.ChatCompany(ctx))
 
 	resp, err := c.http.Do(req)
 	if err != nil {
@@ -66,4 +68,35 @@ func (c *backendFlutClient) GetApplicationParticipants(ctx context.Context, auth
 	default:
 		return nil, fmt.Errorf("backend-flut: unexpected status %d", resp.StatusCode)
 	}
+}
+
+// ChatContext is resolved by backend-flut using the actor's live session and membership.
+type ChatContext struct {
+	ActorID   string `json:"actor_id"`
+	CompanyID string `json:"company_id"`
+	OwnerID   string `json:"owner_id"`
+}
+
+func (c *backendFlutClient) ResolveChatContext(ctx context.Context, authHeader, companyID string) (*ChatContext, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/company/chat-context", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", authHeader)
+	req.Header.Set("X-Company-ID", companyID)
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, utils.ErrForbidden
+	}
+	var result struct {
+		Data ChatContext `json:"data"`
+	}
+	if err = json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	return &result.Data, nil
 }
