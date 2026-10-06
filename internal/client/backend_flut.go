@@ -72,9 +72,11 @@ func (c *backendFlutClient) GetApplicationParticipants(ctx context.Context, auth
 
 // ChatContext is resolved by backend-flut using the actor's live session and membership.
 type ChatContext struct {
-	ActorID   string `json:"actor_id"`
-	CompanyID string `json:"company_id"`
-	OwnerID   string `json:"owner_id"`
+	ActorID     string   `json:"actor_id"`
+	CompanyID   string   `json:"company_id"`
+	OwnerID     string   `json:"owner_id"`
+	Role        string   `json:"role"`
+	Permissions []string `json:"permissions"`
 }
 
 func (c *backendFlutClient) ResolveChatContext(ctx context.Context, authHeader, companyID string) (*ChatContext, error) {

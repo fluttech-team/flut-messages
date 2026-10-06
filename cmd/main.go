@@ -115,7 +115,7 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})
-	mux.Handle("POST /conversations", requireAuth(http.HandlerFunc(restHandler.CreateConversation)))
+	mux.Handle("POST /conversations", requireAuth(middleware.RequireCompanyMessageSend(http.HandlerFunc(restHandler.CreateConversation))))
 	mux.Handle("GET /conversations", requireAuth(http.HandlerFunc(restHandler.GetConversations)))
 	mux.Handle("GET /conversations/{id}/messages", requireAuth(http.HandlerFunc(restHandler.GetMessages)))
 	mux.Handle("GET /conversations/{id}/search", requireAuth(http.HandlerFunc(restHandler.SearchMessages)))
