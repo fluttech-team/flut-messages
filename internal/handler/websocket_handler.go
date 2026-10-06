@@ -59,6 +59,9 @@ func NewWebSocketHandler(
 
 // HandleEvent dispatches incoming WebSocket events to appropriate handlers
 func (h *WebSocketHandler) HandleEvent(ctx context.Context, client *hub.Client, event WebSocketEvent) AckResponse {
+	if domain.ChatCompany(ctx) != "" && (event.Type == "send_message" || event.Type == "typing" || event.Type == "delete_message" || event.Type == "edit_message") && !domain.HasChatPermission(ctx, "company.message.send") {
+		return h.mapError(utils.ErrForbidden)
+	}
 	switch event.Type {
 	case "typing", "mark_as_read", "delete_message", "edit_message", "leave_conversation":
 		var scope struct {

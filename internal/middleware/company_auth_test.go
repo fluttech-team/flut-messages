@@ -8,19 +8,64 @@ import (
 	"testing"
 
 	"github.com/flutapp/chat-service/internal/client"
+	"github.com/flutapp/chat-service/internal/domain"
 )
 
 type companyAuthStub struct{}
 
 func (companyAuthStub) VerifyToken(string) (string, error) { return "member", nil }
 
-type companyResolverStub struct{ denied bool }
+type companyResolverStub struct {
+	denied      bool
+	permissions []string
+}
 
 func (s *companyResolverStub) ResolveChatContext(context.Context, string, string) (*client.ChatContext, error) {
 	if s.denied {
 		return nil, errors.New("revoked")
 	}
-	return &client.ChatContext{ActorID: "member", CompanyID: "owner", OwnerID: "owner"}, nil
+	permissions := s.permissions
+	if permissions == nil {
+		permissions = []string{"company.message.read"}
+	}
+	return &client.ChatContext{ActorID: "member", CompanyID: "owner", OwnerID: "owner", Permissions: permissions}, nil
+}
+
+func TestCompanyPermissionRemovalAppliesOnRevalidation(t *testing.T) {
+	resolver := &companyResolverStub{permissions: []string{"company.message.read", "company.message.send"}}
+	var requestContext context.Context
+	var validate func(context.Context) error
+	handler := RequireAuth(companyAuthStub{}, resolver)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		requestContext = r.Context()
+		validate = CompanyValidator(r)
+	}))
+	request := httptest.NewRequest("GET", "/ws", nil)
+	request.Header.Set("Authorization", "Bearer jwt")
+	request.Header.Set("X-Company-ID", "owner")
+	handler.ServeHTTP(httptest.NewRecorder(), request)
+	if !domain.HasChatPermission(requestContext, "company.message.send") {
+		t.Fatal("initial send permission missing")
+	}
+	resolver.permissions = []string{"company.message.read"}
+	if err := validate(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if domain.HasChatPermission(requestContext, "company.message.send") {
+		t.Fatal("removed send permission remained active")
+	}
+}
+
+func TestCompanyReadOnlyMemberCannotSend(t *testing.T) {
+	resolver := &companyResolverStub{}
+	handler := RequireAuth(companyAuthStub{}, resolver)(RequireCompanyMessageSend(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { t.Fatal("read-only member sent a message") })))
+	request := httptest.NewRequest("POST", "/conversations", nil)
+	request.Header.Set("Authorization", "Bearer jwt")
+	request.Header.Set("X-Company-ID", "owner")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403", response.Code)
+	}
 }
 func TestCompanyAuthPreservesActorAndRechecksMembership(t *testing.T) {
 	resolver := &companyResolverStub{}

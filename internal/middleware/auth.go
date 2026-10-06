@@ -89,6 +89,7 @@ type companyIdentity struct {
 	Actor         string
 	Authorization string
 	Company       string
+	Permissions   []string
 }
 
 const companyIdentityKey contextKey = "companyIdentity"
@@ -129,6 +130,7 @@ func serveAuthenticated(w http.ResponseWriter, r *http.Request, userID string, r
 		if err != nil || resolved == nil || resolved.ActorID != identity.Actor || resolved.CompanyID != identity.Company || resolved.OwnerID != identity.Company {
 			return fmt.Errorf("company access denied")
 		}
+		identity.Permissions = resolved.Permissions
 		return nil
 	}
 	if resolve(r.Context()) != nil {
@@ -138,8 +140,19 @@ func serveAuthenticated(w http.ResponseWriter, r *http.Request, userID string, r
 	ctx := context.WithValue(r.Context(), companyIdentityKey, identity)
 	ctx = domain.WithChatActor(ctx, identity.Actor)
 	ctx = domain.WithChatCompany(ctx, identity.Company)
+	ctx = domain.WithChatPermissions(ctx, &identity.Permissions)
 	ctx = context.WithValue(ctx, validatorKey, resolve)
 	next.ServeHTTP(w, withUserID(r.WithContext(ctx), identity.Company))
+}
+
+func RequireCompanyMessageSend(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if domain.ChatCompany(r.Context()) != "" && !domain.HasChatPermission(r.Context(), "company.message.send") {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 const validatorKey contextKey = "companyValidator"
