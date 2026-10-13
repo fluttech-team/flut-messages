@@ -9,6 +9,7 @@ import (
 	"github.com/flutapp/chat-service/internal/repository"
 	"github.com/flutapp/chat-service/internal/utils"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
 )
 
 type ConversationService interface {
@@ -56,7 +57,18 @@ func (s *conversationService) CreateOrGetConversation(ctx context.Context, reque
 		ApplicationID:  applicationID,
 		ParticipantIDs: []string{participants.ApplicantID, participants.CompanyID},
 	}
-	return s.repo.Create(ctx, newConv)
+	created, err := s.repo.Create(ctx, newConv)
+	if !mongo.IsDuplicateKeyError(err) {
+		return created, err
+	}
+	conv, err = s.repo.FindByApplicationID(ctx, applicationID)
+	if err != nil {
+		return nil, err
+	}
+	if conv == nil || !slices.Contains(conv.ParticipantIDs, requesterID) {
+		return nil, utils.ErrForbidden
+	}
+	return conv, nil
 }
 
 func (s *conversationService) GetConversations(ctx context.Context, userID string, limit, offset int) ([]*domain.Conversation, error) {
